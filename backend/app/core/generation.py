@@ -1,64 +1,58 @@
+"""
+Generation module – builds an answer from retrieved context.
+Uses the globally configured LLM (Gemini) via llama_index.
+"""
 import logging
-from openai import AsyncOpenAI
-from llama_index.core.schema import NodeWithScore
-from app.config import get_settings
+from typing import Optional
+from llama_index.core import Settings
+from llama_index.core.schema import TextNode
+from llama_index.core.prompts import PromptTemplate
+from app.core.index_manager import get_retriever
 
 logger = logging.getLogger(__name__)
-settings = get_settings()
-client = AsyncOpenAI(api_key=settings.openai_api_key)
 
+QA_PROMPT = PromptTemplate(
+    "You are a helpful AI research assistant. "
+    "Use the following pieces of context to answer the user's question. "
+    "If the context doesn't contain the answer, say you don't know.\n\n"
+    "Context:\n{context_str}\n\n"
+    "Question: {query_str}\n"
+    "Answer:"
+)
 
-def build_context(nodes: list[NodeWithScore]) -> str:
-    """Build context string from retrieved nodes."""
-    sections = []
-    for i, node in enumerate(nodes, 1):
-        meta = node.metadata
-        sections.append(
-            f"[{i}] {meta.get('title', 'Unknown')}\n"
-            f"URL: {meta.get('url', '')}\n"
-            f"{node.get_content()}\n"
+async def generate_response(
+        query: str,
+        nodes: Optional[list[TextNode]] = None,
+) -> str:
+    """
+    Generate an answer to `query` using the LLM.
+    If `nodes` are provided, they are used as context directly.
+    Otherwise, the retriever is used to fetch relevant documents.
+    """
+    try:
+        # If nodes are passed (from search route), use them directly
+        if nodes is None:
+            retriever = get_retriever()
+            nodes = await retriever.aretrieve(query)
+
+        if not nodes:
+            return "No relevant papers found. Try refining your query."
+
+        # Build context from the nodes
+        context = "\n\n".join(
+            f"Title: {node.metadata.get('title', 'Untitled')}\n"
+            f"Authors: {node.metadata.get('authors', 'Unknown')}\n"
+            f"Abstract: {node.text}"
+            for node in nodes
         )
-    return "\n---\n".join(sections)
 
+        response = await Settings.llm.apredict(
+            QA_PROMPT,
+            context_str=context,
+            query_str=query,
+        )
+        return str(response)
 
-async def generate_response(query: str, nodes: list[NodeWithScore]) -> dict:
-    """Generate a response with citations."""
-    context = build_context(nodes)
-
-    system_prompt = (
-        "You are a research assistant for ML engineers. "
-        "Answer questions based strictly on the provided arXiv papers. "
-        "Cite papers using [1], [2] etc. corresponding to their order in context. "
-        "Be concise, technical, and precise. "
-        "If the context doesn't contain enough information, say so clearly."
-    )
-
-    user_prompt = (
-        f"Context from arXiv papers:\n\n{context}\n\n"
-        f"Question: {query}\n\n"
-        f"Provide a thorough answer with inline citations."
-    )
-
-    response = await client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        stream=False,
-        temperature=0.1,
-    )
-
-    answer = response.choices[0].message.content
-    citations = [
-        {
-            "index": i + 1,
-            "title": node.metadata.get("title", ""),
-            "url": node.metadata.get("url", ""),
-            "authors": node.metadata.get("authors", []),
-            "published": node.metadata.get("published", ""),
-        }
-        for i, node in enumerate(nodes)
-    ]
-
-    return {"answer": answer, "citations": citations}
+    except Exception as e:
+        logger.error(f"Generation failed: {e}")
+        return f"Sorry, an error occurred while generating the answer: {e}"
