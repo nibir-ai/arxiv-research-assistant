@@ -129,7 +129,7 @@ async def main():
     for metric, score in scores.items():
         filled = int(score * 30)
         bar    = "█" * filled + "░" * (30 - filled)
-        grade  = "🤓 [PASS]" if score >= 0.75 else "🤓 [WARN]" if score >= 0.5 else "🤓 [FAIL]"
+        grade  = "\uf058 [PASS]" if score >= 0.75 else "\uf071 [WARN]" if score >= 0.5 else "\uf057 [FAIL]"
         print(f"  {grade}  {metric:<28} {score:.4f}  {bar}")
     print("═" * 60)
 
