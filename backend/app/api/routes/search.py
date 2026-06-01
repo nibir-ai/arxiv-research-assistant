@@ -12,39 +12,37 @@ router = APIRouter(prefix="/search", tags=["search"])
 
 @router.post("/")
 async def search_papers(request: SearchRequest):
-    """Search arXiv papers — returns AI answer with citations."""
+    """
+    Search arXiv papers using hybrid RAG.
+    Returns an AI-generated answer with inline citations.
+    """
     try:
         retriever = get_retriever()
         nodes = await retrieve(retriever, request.query)
 
         if not nodes:
-            raise HTTPException(status_code=404, detail="No relevant papers found.")
+            raise HTTPException(
+                status_code=404,
+                detail="No relevant papers found. Try a different query."
+            )
 
         if request.use_reranking:
             nodes = rerank(request.query, nodes)
 
-        # generate_response now returns a plain string (the answer)
-        answer = await generate_response(request.query, nodes)
-
-        # Build citations from node metadata
-        citations = []
-        for node in nodes[:request.top_k]:   # limit to requested number
-            citations.append({
-                "title": node.metadata.get("title", "Untitled"),
-                "authors": node.metadata.get("authors", "Unknown"),
-                "url": node.metadata.get("url", ""),
-                "published": node.metadata.get("published", ""),
-            })
+        result = await generate_response(request.query, nodes)
 
         return {
-            "query": request.query,
-            "answer": answer,
-            "citations": citations,
-            "total_retrieved": len(nodes),
+            "query":             request.query,
+            "answer":            result["answer"],
+            "citations":         result["citations"],
+            "total_retrieved":   len(nodes),
             "reranking_applied": request.use_reranking,
         }
+
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Search error: {e}")
+        logger.error(f"Search error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

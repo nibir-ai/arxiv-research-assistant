@@ -1,41 +1,30 @@
-"""
-Central configuration loaded from environment variables (or .env).
-"""
-import os
-from dotenv import load_dotenv
+from pydantic_settings import BaseSettings
+from functools import lru_cache
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
-
-# Load .env from project root (three levels up from this file)
-load_dotenv(
-    dotenv_path=os.path.join(os.path.dirname(__file__), "..", "..", ".env")
-)
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(
-        extra="forbid",   # or "ignore" if you prefer
-    )
-
     # Qdrant
-    qdrant_url: str
-    qdrant_api_key: str
+    qdrant_url: str = "http://localhost:6333"
+    qdrant_api_key: str = ""
     collection_name: str = "arxiv_papers"
 
-    # Embedding
+    # Embedding & reranking
     embedding_model: str = "BAAI/bge-small-en-v1.5"
-
-    # Retrieval defaults
+    reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     top_k_retrieval: int = 20
     top_k_rerank: int = 5
 
-    # Reranker model
-    reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
-
-    # Optional LLM keys – put your real values in .env
+    # LLM
+    llm_provider: str = "ollama"          # ollama | openai
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = "gemma2:2b"
     openai_api_key: str = ""
-    gemini_api_key: str = ""
+    openai_model: str = "gpt-4o-mini"
+
+    class Config:
+        env_file = ".env"
 
 
+@lru_cache()
 def get_settings() -> Settings:
-    """Singleton helper for the rest of the app."""
     return Settings()

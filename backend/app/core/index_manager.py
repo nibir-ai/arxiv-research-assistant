@@ -14,31 +14,51 @@ from llama_index.core.retrievers import QueryFusionRetriever
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.retrievers.bm25 import BM25Retriever
 from llama_index.vector_stores.qdrant import QdrantVectorStore
-from qdrant_client import QdrantClient, AsyncQdrantClient
-from llama_index.llms.ollama import Ollama     # <-- Ollama instead of Gemini
-from dotenv import load_dotenv
+from qdrant_client import QdrantClient
 
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
-
-# Load .env from project root (so environment variables are set)
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
-
-# ── Global LLM: Ollama (local, free, no quotas) ───────────
-Settings.llm = Ollama(model="gemma2:2b", request_timeout=120.0)
-
 settings = get_settings()
 
-# ── Globals ────────────────────────────────────────────
+# ── Globals ────────────────────────────────────────────────────────────────────
 _retriever = None
 _qdrant_client: Optional[QdrantClient] = None
-_async_qdrant_client: Optional[AsyncQdrantClient] = None
-# Resolve the absolute path to the project root directory (4 levels up from backend/app/core/index_manager.py)
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+# Resolve nodes path relative to project root regardless of working directory
+BASE_DIR = os.path.dirname(
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(os.path.abspath(__file__))
+        )
+    )
+)
 NODES_PATH = os.path.join(BASE_DIR, "data", "nodes.json")
 
 
+# ── LLM initialisation ────────────────────────────────────────────────────────
+def init_llm():
+    """Initialise LLM from config and register it globally in LlamaIndex."""
+    if settings.llm_provider == "ollama":
+        from llama_index.llms.ollama import Ollama
+        llm = Ollama(
+            model=settings.ollama_model,
+            base_url=settings.ollama_base_url,
+            request_timeout=120.0,
+        )
+        logger.info(f"LLM: Ollama / {settings.ollama_model} @ {settings.ollama_base_url}")
+    else:
+        from llama_index.llms.openai import OpenAI
+        llm = OpenAI(
+            model=settings.openai_model,
+            api_key=settings.openai_api_key,
+        )
+        logger.info(f"LLM: OpenAI / {settings.openai_model}")
+
+    Settings.llm = llm
+
+
+# ── Qdrant client ─────────────────────────────────────────────────────────────
 def get_qdrant_client() -> QdrantClient:
     global _qdrant_client
     if _qdrant_client is None:
@@ -50,21 +70,14 @@ def get_qdrant_client() -> QdrantClient:
     return _qdrant_client
 
 
-def get_async_qdrant_client() -> AsyncQdrantClient:
-    global _async_qdrant_client
-    if _async_qdrant_client is None:
-        _async_qdrant_client = AsyncQdrantClient(
-            url=settings.qdrant_url,
-            api_key=settings.qdrant_api_key or None,
-        )
-        logger.info(f"Async Qdrant client connected: {settings.qdrant_url}")
-    return _async_qdrant_client
-
-
+# ── Node loading for BM25 ─────────────────────────────────────────────────────
 def load_nodes_from_disk() -> list[TextNode]:
     """Load saved nodes from JSON for BM25 retriever."""
     if not os.path.exists(NODES_PATH):
-        logger.warning(f"No nodes file found at {NODES_PATH}. Run embed_and_index.py first.")
+        logger.warning(
+            f"No nodes file found at {NODES_PATH}. "
+            "Run scripts/embed_and_index.py first."
+        )
         return []
 
     with open(NODES_PATH, "r", encoding="utf-8") as f:
@@ -78,12 +91,22 @@ def load_nodes_from_disk() -> list[TextNode]:
     return nodes
 
 
+# ── Retriever builder ─────────────────────────────────────────────────────────
 def build_retriever() -> Optional[QueryFusionRetriever]:
     """Build hybrid retriever from existing Qdrant index + BM25."""
-    client = get_qdrant_client()
-    aclient = get_async_qdrant_client()
 
-    # Check collection exists
+    # 1. Initialise LLM
+    init_llm()
+
+    # 2. Initialise embedding model
+    embed_model = HuggingFaceEmbedding(model_name=settings.embedding_model)
+    Settings.embed_model = embed_model
+    logger.info(f"Embedding model: {settings.embedding_model}")
+
+    # 3. Connect to Qdrant
+    client = get_qdrant_client()
+
+    # 4. Check collection exists
     collections = [c.name for c in client.get_collections().collections]
     if settings.collection_name not in collections:
         logger.warning(
@@ -92,14 +115,9 @@ def build_retriever() -> Optional[QueryFusionRetriever]:
         )
         return None
 
-    # Set embedding model (this stays the same)
-    embed_model = HuggingFaceEmbedding(model_name=settings.embedding_model)
-    Settings.embed_model = embed_model
-
-    # Vector retriever from existing Qdrant collection (with async client)
+    # 5. Vector retriever from existing Qdrant collection
     vector_store = QdrantVectorStore(
         client=client,
-        aclient=aclient,
         collection_name=settings.collection_name,
     )
     storage_context = StorageContext.from_defaults(vector_store=vector_store)
@@ -111,7 +129,7 @@ def build_retriever() -> Optional[QueryFusionRetriever]:
         similarity_top_k=settings.top_k_retrieval
     )
 
-    # BM25 retriever from saved nodes
+    # 6. BM25 retriever from saved nodes
     nodes = load_nodes_from_disk()
     if not nodes:
         logger.warning("BM25 disabled — no nodes on disk. Falling back to vector-only.")
@@ -122,7 +140,7 @@ def build_retriever() -> Optional[QueryFusionRetriever]:
         similarity_top_k=settings.top_k_retrieval,
     )
 
-    # Hybrid fusion
+    # 7. Hybrid fusion retriever
     hybrid_retriever = QueryFusionRetriever(
         retrievers=[vector_retriever, bm25_retriever],
         similarity_top_k=settings.top_k_retrieval,
@@ -135,6 +153,7 @@ def build_retriever() -> Optional[QueryFusionRetriever]:
     return hybrid_retriever
 
 
+# ── Retriever accessor ────────────────────────────────────────────────────────
 def get_retriever():
     global _retriever
     if _retriever is None:
