@@ -1,5 +1,10 @@
+import os
 from pydantic_settings import BaseSettings
 from functools import lru_cache
+
+# Resolve the absolute path to the project root directory
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ENV_FILE = os.path.join(BASE_DIR, ".env")
 
 
 class Settings(BaseSettings):
@@ -14,7 +19,7 @@ class Settings(BaseSettings):
     top_k_rerank: int = 5
 
     class Config:
-        env_file = ".env"
+        env_file = ENV_FILE
 
 
 @lru_cache()

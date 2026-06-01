@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from qdrant_client import QdrantClient
 from app.config import get_settings
-from app.api.routes import search
+from app.api.routes import search, ingest
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -44,6 +44,7 @@ app.add_middleware(
 )
 
 app.include_router(search.router, prefix="/api/v1")
+app.include_router(ingest.router, prefix="/api/v1")
 
 
 @app.get("/health")
