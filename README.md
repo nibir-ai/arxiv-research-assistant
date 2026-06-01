@@ -44,4 +44,4 @@ RAGAS metrics: faithfulness · answer relevancy · context recall
 
 ## Status
 
-🚧 In active development
+🤓 In active development

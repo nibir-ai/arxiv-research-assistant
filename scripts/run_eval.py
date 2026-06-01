@@ -81,6 +81,10 @@ EVAL_SET = [
 
 
 async def main():
+    # Configure stdout to use UTF-8 on Windows to print nerd emojis without crashing
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+
     print("\n" + "═" * 60)
     print("  ARXIV RAG — RAGAS EVALUATION")
     print("═" * 60)
@@ -125,7 +129,7 @@ async def main():
     for metric, score in scores.items():
         filled = int(score * 30)
         bar    = "█" * filled + "░" * (30 - filled)
-        grade  = "✅" if score >= 0.75 else "⚠️ " if score >= 0.5 else "❌"
+        grade  = "🤓 [PASS]" if score >= 0.75 else "🤓 [WARN]" if score >= 0.5 else "🤓 [FAIL]"
         print(f"  {grade}  {metric:<28} {score:.4f}  {bar}")
     print("═" * 60)
 
