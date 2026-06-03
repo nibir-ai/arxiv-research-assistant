@@ -14,7 +14,7 @@ from llama_index.core.retrievers import QueryFusionRetriever
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.retrievers.bm25 import BM25Retriever
 from llama_index.vector_stores.qdrant import QdrantVectorStore
-from qdrant_client import QdrantClient
+from qdrant_client import QdrantClient, AsyncQdrantClient
 
 from app.config import get_settings
 
@@ -24,6 +24,7 @@ settings = get_settings()
 # ── Globals ────────────────────────────────────────────────────────────────────
 _retriever = None
 _qdrant_client: Optional[QdrantClient] = None
+_async_qdrant_client: Optional[AsyncQdrantClient] = None
 
 # Resolve nodes path relative to project root regardless of working directory
 BASE_DIR = os.path.dirname(
@@ -70,6 +71,17 @@ def get_qdrant_client() -> QdrantClient:
     return _qdrant_client
 
 
+def get_async_qdrant_client() -> AsyncQdrantClient:
+    global _async_qdrant_client
+    if _async_qdrant_client is None:
+        _async_qdrant_client = AsyncQdrantClient(
+            url=settings.qdrant_url,
+            api_key=settings.qdrant_api_key or None,
+        )
+        logger.info(f"Async Qdrant client connected: {settings.qdrant_url}")
+    return _async_qdrant_client
+
+
 # ── Node loading for BM25 ─────────────────────────────────────────────────────
 def load_nodes_from_disk() -> list[TextNode]:
     """Load saved nodes from JSON for BM25 retriever."""
@@ -105,6 +117,7 @@ def build_retriever() -> Optional[QueryFusionRetriever]:
 
     # 3. Connect to Qdrant
     client = get_qdrant_client()
+    aclient = get_async_qdrant_client()
 
     # 4. Check collection exists
     collections = [c.name for c in client.get_collections().collections]
@@ -118,6 +131,7 @@ def build_retriever() -> Optional[QueryFusionRetriever]:
     # 5. Vector retriever from existing Qdrant collection
     vector_store = QdrantVectorStore(
         client=client,
+        aclient=aclient,
         collection_name=settings.collection_name,
     )
     storage_context = StorageContext.from_defaults(vector_store=vector_store)

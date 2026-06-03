@@ -8,6 +8,12 @@ Usage:
 import sys
 import os
 import asyncio
+import types
+
+# Mock langchain_community.chat_models.vertexai to bypass an import bug in older ragas versions
+mock_vertex = types.ModuleType('vertexai')
+mock_vertex.ChatVertexAI = object  # Dummy class since we don't use VertexAI
+sys.modules['langchain_community.chat_models.vertexai'] = mock_vertex
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
 

@@ -1,8 +1,13 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        extra="ignore",          # ignore any unknown keys in .env
+    )
+
     # Qdrant
     qdrant_url: str = "http://localhost:6333"
     qdrant_api_key: str = ""
@@ -15,14 +20,11 @@ class Settings(BaseSettings):
     top_k_rerank: int = 5
 
     # LLM
-    llm_provider: str = "ollama"          # ollama | openai
+    llm_provider: str = "ollama"
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "gemma2:2b"
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
-
-    class Config:
-        env_file = ".env"
 
 
 @lru_cache()
