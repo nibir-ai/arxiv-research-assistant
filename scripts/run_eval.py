@@ -1,5 +1,5 @@
 """
-RAGAS evaluation script — run against the live pipeline.
+Evaluation script — custom metrics, no OpenAI dependency.
 Usage:
     cd E:\\arxiv-research-assistant
     venv\\Scripts\\activate
@@ -8,12 +8,9 @@ Usage:
 import sys
 import os
 import asyncio
-import types
+import logging
 
-# Mock langchain_community.chat_models.vertexai to bypass an import bug in older ragas versions
-mock_vertex = types.ModuleType('vertexai')
-mock_vertex.ChatVertexAI = object  # Dummy class since we don't use VertexAI
-sys.modules['langchain_community.chat_models.vertexai'] = mock_vertex
+logging.basicConfig(level=logging.WARNING)
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
 
@@ -21,7 +18,7 @@ from app.core.index_manager import build_retriever, set_retriever, init_llm
 from app.core.retrieval import retrieve
 from app.core.reranking import rerank
 from app.core.generation import generate_response
-from app.evaluation.ragas_eval import build_ragas_dataset, run_evaluation, save_results
+from app.evaluation.ragas_eval import run_evaluation, save_results
 
 # ── Evaluation dataset ────────────────────────────────────────────────────────
 EVAL_SET = [
@@ -87,13 +84,9 @@ EVAL_SET = [
 
 
 async def main():
-    # Configure stdout to use UTF-8 on Windows to print nerd emojis without crashing
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8")
-
-    print("\n" + "═" * 60)
-    print("  ARXIV RAG — RAGAS EVALUATION")
-    print("═" * 60)
+    print("\n" + "═" * 62)
+    print("  ARXIV RAG — EVALUATION  (local, no OpenAI needed)")
+    print("═" * 62)
 
     print("\n[Setup] Initialising pipeline...")
     init_llm()
@@ -117,31 +110,40 @@ async def main():
 
         answer = result["answer"] if isinstance(result, dict) else str(result)
 
+        # extract raw text from nodes
+        node_texts = []
+        for n in nodes:
+            if hasattr(n, "node"):
+                node_texts.append(n.node.get_content())
+            else:
+                node_texts.append(n.get_content())
+
         questions.append(q)
         answers.append(answer)
-        contexts.append([n.get_content() if hasattr(n, "get_content") else n.node.get_content() for n in nodes])
+        contexts.append(node_texts)
         ground_truths.append(gt)
 
-        print(f"   → {answer[:100]}...")
-        print(f"   → {len(nodes)} nodes retrieved\n")
+        print(f"   answer : {answer[:110]}...")
+        print(f"   nodes  : {len(nodes)} retrieved\n")
 
-    print("Running RAGAS metrics (this may take 2–5 minutes)...")
-    dataset = build_ragas_dataset(questions, answers, contexts, ground_truths)
-    scores  = run_evaluation(dataset)
+    print("Computing evaluation metrics...")
+    print("(faithfulness scored by Ollama — may take ~2 min)\n")
 
-    print("\n" + "═" * 60)
+    scores = await run_evaluation(questions, answers, contexts, ground_truths)
+
+    print("\n" + "═" * 62)
     print("  RESULTS")
-    print("═" * 60)
+    print("═" * 62)
     for metric, score in scores.items():
         filled = int(score * 30)
         bar    = "█" * filled + "░" * (30 - filled)
-        grade  = "\uf058 [PASS]" if score >= 0.75 else "\uf071 [WARN]" if score >= 0.5 else "\uf057 [FAIL]"
+        grade  = "✅" if score >= 0.75 else "⚠️ " if score >= 0.5 else "❌"
         print(f"  {grade}  {metric:<28} {score:.4f}  {bar}")
-    print("═" * 60)
+    print("═" * 62)
 
     os.makedirs("data", exist_ok=True)
-    save_results(scores, "data/ragas_scores.json")
-    print(f"\n  Saved → data/ragas_scores.json")
+    save_results(scores, "data/eval_scores.json")
+    print(f"\n  Saved → data/eval_scores.json")
     print("  These are your resume metrics.\n")
 
 
