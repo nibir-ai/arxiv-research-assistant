@@ -21,14 +21,14 @@
   --accent-secondary: #6366f1;
   --accent-glow: rgba(139, 92, 246, 0.15);
   --accent-glow-strong: rgba(139, 92, 246, 0.25);
-  --accent-text: #a78bfa;
-  --accent-text-dim: #7c6dc7;
+  --accent-text: #c084fc;
+  --accent-text-dim: #a78bfa;
 
   /* Text hierarchy */
-  --text-primary: #ededf4;
-  --text-secondary: #9b9bb0;
-  --text-tertiary: #5e5e76;
-  --text-quaternary: #3d3d52;
+  --text-primary: #ffffff;
+  --text-secondary: #e2e8f0;
+  --text-tertiary: #94a3b8;
+  --text-quaternary: #64748b;
 
   /* Semantic */
   --success: #34d399;
