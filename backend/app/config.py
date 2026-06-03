@@ -1,10 +1,16 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
+import os
 from functools import lru_cache
+from dotenv import load_dotenv
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Resolve absolute path to project root .env
+ENV_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
+load_dotenv(dotenv_path=ENV_PATH)
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=ENV_PATH,
         extra="ignore",          # ignore any unknown keys in .env
     )
 
